@@ -94,8 +94,15 @@ public class TeamController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         boolean isAdmin = userService.isAdmin(request);
-        // 1、查询队伍列表
         List<TeamUserVO> teamList = teamService.listTeams(teamQuery, isAdmin);
+        // 1、查询队伍列表
+        /* final List<Long> teamIdList = teamList.stream().map(TeamUserVO::getId).collect(Collectors.toList());
+        这行代码是用Java 8的流式编程来处理一个List对象的。它的意思是：
+        从teamList中获取一个流对象，流对象可以对集合进行各种操作。
+        使用map方法，对流中的每个元素（TeamUserVO对象）调用getId方法，得到一个Long类型的值。
+        使用collect方法，将流中的元素收集到一个新的List对象中，这个List对象的泛型是Long。
+        将这个新的List对象赋值给teamIdList变量。
+        简单来说，就是把teamList中每个元素的id提取出来，放到一个新的List中。*/
         final List<Long> teamIdList = teamList.stream().map(TeamUserVO::getId).collect(Collectors.toList());
         // 2、判断当前用户是否已加入队伍
         QueryWrapper<UserTeam> userTeamQueryWrapper = new QueryWrapper<>();
@@ -222,38 +229,24 @@ public class TeamController {
         return ResultUtils.success(teamList);
     }
 
-    @GetMapping("/list/userTeamInfo")
-    public BaseResponse<List<UserTeam>> listUserTeams(@RequestParam int teamId) {
+    @GetMapping("/list/usersInTeam")
+    public BaseResponse<List<User>> listUsersInTeam(@RequestParam int teamId) {
+
+        // 在表user_team中查出这个队伍的用户
         QueryWrapper<UserTeam> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("teamId",teamId);
+        queryWrapper.eq("isDelete",0);
         List<UserTeam> userTeamList = userTeamService.list(queryWrapper);
-        return ResultUtils.success(userTeamList);
+        // 提取id，作为新的list
+        final List<Long> userIdList = userTeamList.stream().map(UserTeam::getUserId).collect(Collectors.toList());
+
+        // 在表user中查询这些用户的详细信息
+        QueryWrapper<User> queryWrapperUser = new QueryWrapper<>();
+        queryWrapperUser.in("id",userIdList);
+        List<User> userList = userService.list(queryWrapperUser);
+        // 用户信息脱敏
+        List<User> safeUserList = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
+
+        return ResultUtils.success(safeUserList);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

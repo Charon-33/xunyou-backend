@@ -134,11 +134,22 @@ public class UserController {
     }
 
     @GetMapping("/search/username")
-    public BaseResponse<List<User>> searchUsers(@RequestParam(required = false) String username) {
+    public BaseResponse<List<User>> searchUsersByUsername(@RequestParam(required = false) String username) {
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         if (StringUtils.isNotBlank(username)) {
             queryWrapper.like("username", username);
 //            queryWrapper.eq("id",userid);
+        }
+        List<User> userList = userService.list(queryWrapper);
+        List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
+        return ResultUtils.success(list);
+    }
+    @GetMapping("/search/userid")
+    public BaseResponse<List<User>> searchUsersById(@RequestParam(required = false) String userid) {
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        if (StringUtils.isNotBlank(userid)) {
+//            queryWrapper.like("username", username);
+            queryWrapper.eq("id",userid);
         }
         List<User> userList = userService.list(queryWrapper);
         List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
