@@ -33,6 +33,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.awt.image.BufferedImage;
 
+import static com.wsj.xunyou.utils.MailUtils.sendMail;
+
 /**
  * 用户接口
  *
@@ -55,8 +57,8 @@ public class UserController {
         if (userRegisterRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        if(!checkCode(userRegisterRequest.getCheckCode(), request)){
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "验证码错误");
+        if (!checkCode(userRegisterRequest.getCheckCode(), request)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "验证码错误或已过期");
         }
         String userAccount = userRegisterRequest.getUserAccount();
         String userPassword = userRegisterRequest.getUserPassword();
@@ -73,8 +75,8 @@ public class UserController {
         if (userLoginRequest == null) {
             return ResultUtils.error(ErrorCode.PARAMS_ERROR);
         }
-        if(!checkCode(userLoginRequest.getCheckCode(), request)){
-            return ResultUtils.error(ErrorCode.PARAMS_ERROR,"验证码错误");
+        if (!checkCode(userLoginRequest.getCheckCode(), request)) {
+            return ResultUtils.error(ErrorCode.PARAMS_ERROR, "验证码错误或已过期");
         }
         String userAccount = userLoginRequest.getUserAccount();
         String userPassword = userLoginRequest.getUserPassword();
@@ -82,33 +84,65 @@ public class UserController {
             return ResultUtils.error(ErrorCode.PARAMS_ERROR);
         }
         User user = userService.userLogin(userAccount, userPassword, request);
-        if(user == null){
-            return ResultUtils.error(ErrorCode.PARAMS_ERROR,"用户名或密码错误");
+        if (user == null) {
+            return ResultUtils.error(ErrorCode.PARAMS_ERROR, "用户名或密码错误");
         }
         return ResultUtils.success(user);
     }
 
     @RequestMapping("/check")
-    public boolean checkCode(@RequestParam String codeClient, HttpServletRequest request){
-        String codeServer = (String)request.getSession().getAttribute("CHECKCODE");
+    public boolean checkCode(@RequestParam String codeClient, HttpServletRequest request) {
+        String codeServer = (String) request.getSession().getAttribute("CHECKCODE");
         return codeClient.equals(codeServer);
     }
+
+    @GetMapping("/sendcheckcode")
+    public void sendCheckCodeToMail( HttpServletRequest request) {
+        String codeServer = (String) request.getSession().getAttribute("CHECKCODE");
+        String redisKey = String.format("xunyou:user:confirmKey:%s", codeServer);
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        // 如果有缓存，直接读缓存
+        String confirmKey = (String) valueOperations.get(redisKey);
+        if (confirmKey != null) {
+            User user = getCurrentUser(request).getData();
+            sendMail(user.getEmail(),"您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + codeServer + "。验证码有效期为5分钟，请勿泄露。","【伙伴匹配系统】账号安全中心");
+        }
+    }
+
     @GetMapping("/checkcode")
     public void checkCodeMake(HttpServletResponse response, HttpServletRequest request) throws IOException {
-        //画验证码
-        DrawCheckCode drawCheckcode = new DrawCheckCode();
-        BufferedImage image = drawCheckcode.doDraw();
-        //设置响应头，防止缓存
-        response.setHeader("Pragma","no-cache");
-        response.setHeader("Cache-Control","no-cache");
-        response.setHeader("Expires","0");
-        //将验证码的值保存在session中，以便校验
-        request.getSession().setAttribute("CHECKCODE",drawCheckcode.getCheckCode());
+        // 看看缓存中有没有验证码
+        String redisKey = "xunyou:user:confirmKey:";
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        // 如果有缓存，直接读缓存
+        String confirmKey = (String) valueOperations.get(redisKey);
+        if (confirmKey == null) {
+            //画验证码
+            DrawCheckCode drawCheckcode = new DrawCheckCode();
+            BufferedImage image = drawCheckcode.doDraw();
+            //设置响应头，防止缓存
+            response.setHeader("Pragma", "no-cache");
+            response.setHeader("Cache-Control", "no-cache");
+            response.setHeader("Expires", "0");
+            //将验证码的值保存在session中，以便校验
+//        request.getSession().setAttribute("CHECKCODE", drawCheckcode.getCheckCode());
+            request.getSession().setAttribute("CHECKCODE", confirmKey);
+        }else{
+            // 如果没有缓存，就写缓存
+            try {
+                // 指定缓存1分钟过期时间
+                valueOperations.set(redisKey, confirmKey, 60000, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                log.error("redis set key error", e);
+            }
+        }
+
         ServletOutputStream outputStream = response.getOutputStream();
-        ImageIO.write(image,"jpeg",outputStream);
+        ImageIO.write(image, "jpeg", outputStream);
         outputStream.flush();   //清空缓冲区数据
         outputStream.close();   //关闭流
     }
+
 
     @PostMapping("/logout")
     public BaseResponse<Integer> userLogout(HttpServletRequest request) {
@@ -129,8 +163,8 @@ public class UserController {
         long userId = currentUser.getId();
         // TODO 校验用户是否合法
         User user = userService.getById(userId);
-        User safetyUser = userService.getSafetyUser(user);
-        return ResultUtils.success(safetyUser);
+//        User safetyUser = userService.getSafetyUser(user);
+        return ResultUtils.success(user);
     }
 
     @GetMapping("/search/username")
@@ -144,21 +178,23 @@ public class UserController {
         List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
         return ResultUtils.success(list);
     }
+
     @GetMapping("/search/userid")
     public BaseResponse<List<User>> searchUsersById(@RequestParam(required = false) String userid) {
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         if (StringUtils.isNotBlank(userid)) {
 //            queryWrapper.like("username", username);
-            queryWrapper.eq("id",userid);
+            queryWrapper.eq("id", userid);
         }
         List<User> userList = userService.list(queryWrapper);
         List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
         return ResultUtils.success(list);
     }
+
     @GetMapping("/searchMutiId")
     public BaseResponse<List<User>> searchMutiUsers(@RequestParam List<Integer> usersid) {
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.in("id",usersid);
+        queryWrapper.in("id", usersid);
         List<User> userList = userService.list(queryWrapper);
         List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
         return ResultUtils.success(list);
@@ -172,7 +208,6 @@ public class UserController {
         List<User> userList = userService.searchUsersByTags(tagNameList);
         return ResultUtils.success(userList);
     }
-
 
 
     // todo 推荐多个，未实现
@@ -200,8 +235,8 @@ public class UserController {
     }
 
     @GetMapping("/totalItems")
-    public BaseResponse<Integer> totalItems(){
-        int result = (int)userService.getTotalItems();
+    public BaseResponse<Integer> totalItems() {
+        int result = (int) userService.getTotalItems();
         return ResultUtils.success(result);
     }
 
@@ -241,7 +276,7 @@ public class UserController {
     @GetMapping("/match")
     public BaseResponse<List<User>> matchUsers(HttpServletRequest request) {
         User user = userService.getLoginUser(request);
-        return ResultUtils.success(userService.matchUsers(1000, user));
+        return ResultUtils.success(userService.matchUsers(5, user));
     }
 
 }

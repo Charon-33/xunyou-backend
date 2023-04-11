@@ -265,15 +265,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         queryWrapper.isNotNull("tags");
         List<User> userList = this.list(queryWrapper);
         String tags = loginUser.getTags();
-        Gson gson = new Gson();
-
+//        Gson gson = new Gson();
         /*创建一个Gson对象，用于处理Json相关的操作。
         创建一个TypeToken对象，用于指定List对象的泛型类型是String。
         调用Gson对象的fromJson方法，传入两个参数，一个是Json字符串tags，一个是TypeToken对象的getType方法返回的Type对象。
         将fromJson方法返回的List对象赋值给tagList变量。
         简单来说，就是把tags中的Json数组转换成一个String类型的List。*/
-        List<String> tagList = gson.fromJson(tags, new TypeToken<List<String>>() {
-        }.getType());
+//        List<String> tagList = gson.fromJson(tags, new TypeToken<List<String>>() {
+//        }.getType());
         // 用户列表的下标 => 相似度
         List<Pair<User, Long>> list = new ArrayList<>();
         // 依次计算所有用户和当前用户的相似度
@@ -284,10 +283,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             if (StringUtils.isBlank(userTags) || user.getId() == loginUser.getId()) {
                 continue;
             }
-            List<String> userTagList = gson.fromJson(userTags, new TypeToken<List<String>>() {
-            }.getType());
+//            List<String> userTagList = gson.fromJson(userTags, new TypeToken<List<String>>() {
+//            }.getType());
+
             // 计算分数
-            long distance = AlgorithmUtils.minDistance(tagList, userTagList);
+//            long distance = AlgorithmUtils.minDistance(tagList, userTagList);
+            long distance = AlgorithmUtils.minDistance(tags, userTags);
             list.add(new Pair<>(user, distance));
         }
         // 按编辑距离由小到大排序
