@@ -25,11 +25,6 @@ public class User implements Serializable {
     private String username;
 
     /**
-     * 账号
-     */
-    private String userAccount;
-
-    /**
      * 用户头像
      */
     private String avatarUrl;
@@ -84,7 +79,6 @@ public class User implements Serializable {
      * 用户角色 0 - 普通用户 1 - 管理员
      */
     private Integer userRole;
-
 
     @TableField(exist = false)
     private static final long serialVersionUID = 1L;

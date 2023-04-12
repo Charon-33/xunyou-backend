@@ -14,18 +14,23 @@ import com.wsj.xunyou.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.math3.util.Pair;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
-import org.springframework.util.DigestUtils;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.wsj.xunyou.constant.UserConstant.USER_LOGIN_STATE;
+import static com.wsj.xunyou.utils.MailUtils.sendMail;
 
 /**
  * 用户服务实现类
@@ -39,86 +44,82 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
     @Resource
     private UserMapper userMapper;
-
+    @Resource
+    private RedisTemplate<String, Object> redisTemplate;
     /**
      * 盐值，混淆密码
      */
     private static final String SALT = "wsj";
 
     @Override
-    public long userRegister(String userAccount, String userPassword, String checkPassword) {
+    public Long userRegister(String userName, String email, String userPassword, String checkPassword) {
         // 1. 校验
-        if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword)) {
+        if (StringUtils.isAnyBlank(userName, email, userPassword, checkPassword)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");
-        }
-        if (userAccount.length() < 4) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户账号过短");
         }
         if (userPassword.length() < 8 || checkPassword.length() < 8) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户密码过短");
         }
 
         // 账户不能包含特殊字符 TODO 前端校验账户名
-        String validPattern = "[`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
-        Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
-        if (matcher.find()) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户名中不能包含特殊字符");
-        }
+//        String validPattern = "[`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
+//        Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
+//        if (matcher.find()) {
+//            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户名中不能包含特殊字符");
+//        }
         // 密码和校验密码相同 TODO 前端校验两次密码
         if (!userPassword.equals(checkPassword)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "两次输入的密码不一致");
         }
         // 账户不能重复
-        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userAccount", userAccount);
-        long count = userMapper.selectCount(queryWrapper);
-        if (count > 0) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "账号重复");
-        }
+//        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+//        queryWrapper.eq("email", email);
+//        long count = userMapper.selectCount(queryWrapper);
+//        if (count > 0) {
+//            throw new BusinessException(ErrorCode.PARAMS_ERROR, "该邮箱已注册！");
+//        }
 
         // 2. 加密
 //        String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
         // 3. 插入数据
         User user = new User();
-        user.setUserAccount(userAccount);
+        user.setUsername(userName);
+        user.setEmail(email);
 //        user.setUserPassword(encryptPassword);
         user.setUserPassword(userPassword);
         boolean saveResult = this.save(user);
         if (!saveResult) {
-            return -1;
+            return -1L;
         }
         return user.getId();
     }
 
     @Override
-    public User userLogin(String userAccount, String userPassword, HttpServletRequest request) {
+    public User userLogin(String userEmail, String userPassword, HttpServletRequest request) {
         // 1. 校验
-        if (StringUtils.isAnyBlank(userAccount, userPassword)) {
-            return null;
-        }
-        if (userAccount.length() < 4) {
+        if (StringUtils.isAnyBlank(userEmail, userPassword)) {
             return null;
         }
         if (userPassword.length() < 8) {
             return null;
         }
         // 账户不能包含特殊字符
-        String validPattern = "[`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
-        Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
-        if (matcher.find()) {
-            return null;
-        }
+//        String validPattern = "[`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
+//        Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
+//        if (matcher.find()) {
+//            return null;
+//        }
         // 2. 加密
 //        String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
         // 查询用户是否存在
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userAccount", userAccount);
+        queryWrapper.eq("email", userEmail);
 //        queryWrapper.eq("userPassword", encryptPassword);
         queryWrapper.eq("userPassword", userPassword);
         User user = userMapper.selectOne(queryWrapper);
         // 用户不存在
         if (user == null) {
-            log.info("user login failed, userAccount cannot match userPassword");
+            log.info("user login failed, userEmail cannot match userPassword");
             return null;
         }
         // 3. 用户脱敏
@@ -126,6 +127,42 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         // 4. 记录用户的登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, safetyUser);
         return safetyUser;
+    }
+
+    /**
+     * 获取验证码
+     */
+    public String getCheckCode(String mail, String redisKey, String confirmKey, int opt) {
+        // opt为1时表示在注册，注册时要验证邮箱是否已注册
+        if(opt == 1){
+            QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("email", mail);
+            long count = userMapper.selectCount(queryWrapper);
+            if (count > 0) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "该邮箱已注册！");
+            }
+        }
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        // 如果在缓存中没有找到验证码，重新生成验证码
+        if (Objects.equals(confirmKey, "")) {
+            //生成验证码
+            //原来是0-8999，+1000后变成1000-9999
+            int ran = (int)(Math.random()*9000)+1000;
+            String checkCode = String.valueOf(ran);
+
+            sendMail(mail,"您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + checkCode + "。验证码有效期为1分钟，请勿泄露。","【伙伴匹配系统】账号安全中心");
+//            System.out.println("邮箱已发送！");
+            try {
+                // 指定缓存1分钟过期时间
+                valueOperations.set(redisKey, checkCode, 60000, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                log.error("redis set key error", e);
+            }
+            return checkCode;
+        }else{
+            sendMail(mail,"您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + confirmKey + "，请勿泄露。","【伙伴匹配系统】账号安全中心");
+            return confirmKey;
+        }
     }
 
     /**
@@ -142,7 +179,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         User safetyUser = new User();
         safetyUser.setId(originUser.getId());
         safetyUser.setUsername(originUser.getUsername());
-        safetyUser.setUserAccount(originUser.getUserAccount());
         safetyUser.setAvatarUrl(originUser.getAvatarUrl());
         safetyUser.setGender(originUser.getGender());
         safetyUser.setPhone(originUser.getPhone());

@@ -10,17 +10,9 @@ import java.io.Serializable;
  * @author yupi
  */
 @Data
-public class UserRegisterRequest implements Serializable {
+public class ResetPwd implements Serializable {
 
     private static final long serialVersionUID = 3191241716373120793L;
-
-    private String userName;
-
-    private String email;
-
-    private String userPassword;
-
-    private String checkPassword;
 
     private String checkCode;
 }

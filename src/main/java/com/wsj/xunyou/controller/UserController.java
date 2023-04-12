@@ -29,6 +29,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.awt.image.BufferedImage;
@@ -53,21 +54,34 @@ public class UserController {
     private RedisTemplate<String, Object> redisTemplate;
 
     @PostMapping("/register")
-    public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest, HttpServletRequest request) {
+    public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest, HttpServletResponse response ,HttpServletRequest request) throws IOException {
         if (userRegisterRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        if (!checkCode(userRegisterRequest.getCheckCode(), request)) {
+        String redisKey = "xunyou:user:confirmKey:";
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        String confirmKey = (String) valueOperations.get(redisKey);
+        if (confirmKey == null || Integer.parseInt(userRegisterRequest.getCheckCode()) != Integer.parseInt(confirmKey)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "验证码错误或已过期");
         }
-        String userAccount = userRegisterRequest.getUserAccount();
+
+        String userName = userRegisterRequest.getUserName();
+        String email = userRegisterRequest.getEmail();
         String userPassword = userRegisterRequest.getUserPassword();
         String checkPassword = userRegisterRequest.getCheckPassword();
-        if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword)) {
+        if (StringUtils.isAnyBlank(userName, email, userPassword, checkPassword)) {
             return null;
         }
-        long result = userService.userRegister(userAccount, userPassword, checkPassword);
-        return ResultUtils.success(result);
+        Long userid = userService.userRegister(userName, email, userPassword, checkPassword);
+
+        // 注册完成后将生成的id作为登录验证码
+        response.setHeader("Pragma","no-cache");
+        response.setHeader("Cache-Control","no-cache");
+        response.setHeader("Expires","0");
+        //将验证码的值保存在session中，以便校验
+        request.getSession().setAttribute("CHECKCODE",String.valueOf(userid));
+
+        return ResultUtils.success(userid);
     }
 
     @PostMapping("/login")
@@ -75,74 +89,70 @@ public class UserController {
         if (userLoginRequest == null) {
             return ResultUtils.error(ErrorCode.PARAMS_ERROR);
         }
-        if (!checkCode(userLoginRequest.getCheckCode(), request)) {
-            return ResultUtils.error(ErrorCode.PARAMS_ERROR, "验证码错误或已过期");
+        if(!checkCode(userLoginRequest.getCheckCode(), request)){
+            return ResultUtils.error(ErrorCode.PARAMS_ERROR,"验证码错误");
         }
-        String userAccount = userLoginRequest.getUserAccount();
+        String userEmail = userLoginRequest.getUserEmail();
         String userPassword = userLoginRequest.getUserPassword();
-        if (StringUtils.isAnyBlank(userAccount, userPassword)) {
+        if (StringUtils.isAnyBlank(userEmail, userPassword)) {
             return ResultUtils.error(ErrorCode.PARAMS_ERROR);
         }
-        User user = userService.userLogin(userAccount, userPassword, request);
+        User user = userService.userLogin(userEmail, userPassword, request);
         if (user == null) {
             return ResultUtils.error(ErrorCode.PARAMS_ERROR, "用户名或密码错误");
         }
         return ResultUtils.success(user);
     }
 
+    /**
+     * 用于合法注册邮箱时、更改密码时使用
+     */
+    @GetMapping("/sentcheckcode")
+    public void sentCheckCode(@RequestParam String mail, @RequestParam int opt) {
+        // 在缓存中找验证码
+        String redisKey = "xunyou:user:confirmKey:";
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        String confirmKey = (String) valueOperations.get(redisKey);
+        if(confirmKey == null){
+            confirmKey = "";
+        }
+        userService.getCheckCode(mail, redisKey, confirmKey, opt);
+    }
+
+    /**
+     * 用于登录中即时检查验证码是否正确
+     * @param codeClient
+     * @param request
+     * @return
+     */
     @RequestMapping("/check")
-    public boolean checkCode(@RequestParam String codeClient, HttpServletRequest request) {
-        String codeServer = (String) request.getSession().getAttribute("CHECKCODE");
+    public boolean checkCode(@RequestParam String codeClient, HttpServletRequest request){
+        String codeServer = (String)request.getSession().getAttribute("CHECKCODE");
         return codeClient.equals(codeServer);
     }
 
-    @GetMapping("/sendcheckcode")
-    public void sendCheckCodeToMail( HttpServletRequest request) {
-        String codeServer = (String) request.getSession().getAttribute("CHECKCODE");
-        String redisKey = String.format("xunyou:user:confirmKey:%s", codeServer);
-        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
-        // 如果有缓存，直接读缓存
-        String confirmKey = (String) valueOperations.get(redisKey);
-        if (confirmKey != null) {
-            User user = getCurrentUser(request).getData();
-            sendMail(user.getEmail(),"您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + codeServer + "。验证码有效期为5分钟，请勿泄露。","【伙伴匹配系统】账号安全中心");
-        }
-    }
-
+    /**
+     * 用于登录中生成/刷新验证码
+     * @param response
+     * @param request
+     * @throws IOException
+     */
     @GetMapping("/checkcode")
     public void checkCodeMake(HttpServletResponse response, HttpServletRequest request) throws IOException {
-        // 看看缓存中有没有验证码
-        String redisKey = "xunyou:user:confirmKey:";
-        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
-        // 如果有缓存，直接读缓存
-        String confirmKey = (String) valueOperations.get(redisKey);
-        if (confirmKey == null) {
-            //画验证码
-            DrawCheckCode drawCheckcode = new DrawCheckCode();
-            BufferedImage image = drawCheckcode.doDraw();
-            //设置响应头，防止缓存
-            response.setHeader("Pragma", "no-cache");
-            response.setHeader("Cache-Control", "no-cache");
-            response.setHeader("Expires", "0");
-            //将验证码的值保存在session中，以便校验
-//        request.getSession().setAttribute("CHECKCODE", drawCheckcode.getCheckCode());
-            request.getSession().setAttribute("CHECKCODE", confirmKey);
-        }else{
-            // 如果没有缓存，就写缓存
-            try {
-                // 指定缓存1分钟过期时间
-                valueOperations.set(redisKey, confirmKey, 60000, TimeUnit.MILLISECONDS);
-            } catch (Exception e) {
-                log.error("redis set key error", e);
-            }
-        }
-
+        //画验证码
+        DrawCheckCode drawCheckcode = new DrawCheckCode();
+        BufferedImage image = drawCheckcode.doDraw();
+        //设置响应头，防止缓存
+        response.setHeader("Pragma","no-cache");
+        response.setHeader("Cache-Control","no-cache");
+        response.setHeader("Expires","0");
+        //将验证码的值保存在session中，以便校验
+        request.getSession().setAttribute("CHECKCODE",drawCheckcode.getCheckCode());
         ServletOutputStream outputStream = response.getOutputStream();
-        ImageIO.write(image, "jpeg", outputStream);
+        ImageIO.write(image,"jpeg",outputStream);
         outputStream.flush();   //清空缓冲区数据
         outputStream.close();   //关闭流
     }
-
 
     @PostMapping("/logout")
     public BaseResponse<Integer> userLogout(HttpServletRequest request) {
@@ -253,6 +263,17 @@ public class UserController {
         int result = userService.updateUser(user, loginUser);
         return ResultUtils.success(result);
     }
+    @RequestMapping("/resetPwtCheckCode")
+    public boolean forgetPwtCheckCode(@RequestParam String resetPwdCheckCode) {
+        String redisKey = "xunyou:user:confirmKey:";
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        String confirmKey = (String) valueOperations.get(redisKey);
+        if (confirmKey == null || Integer.parseInt(resetPwdCheckCode) != Integer.parseInt(confirmKey)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "验证码错误或已过期");
+        }else{
+            return true;
+        }
+    }
 
     @PostMapping("/delete")
     public BaseResponse<Boolean> deleteUser(@RequestBody long id, HttpServletRequest request) {
@@ -269,7 +290,6 @@ public class UserController {
     /**
      * 获取最匹配的用户
      *
-     * @param num
      * @param request
      * @return
      */
