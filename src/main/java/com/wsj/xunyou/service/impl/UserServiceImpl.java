@@ -12,8 +12,11 @@ import com.wsj.xunyou.utils.AlgorithmUtils;
 import com.wsj.xunyou.constant.UserConstant;
 import com.wsj.xunyou.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
+import me.xdrop.fuzzywuzzy.FuzzySearch;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.math3.util.Pair;
+import org.simmetrics.StringMetric;
+import org.simmetrics.metrics.StringMetrics;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.wsj.xunyou.constant.UserConstant.USER_LOGIN_STATE;
+import static com.wsj.xunyou.utils.AlgorithmActLd.compareUseActLd;
 import static com.wsj.xunyou.utils.MailUtils.sendMail;
 
 /**
@@ -134,7 +138,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
      */
     public String getCheckCode(String mail, String redisKey, String confirmKey, int opt) {
         // opt为1时表示在注册，注册时要验证邮箱是否已注册
-        if(opt == 1){
+        if (opt == 1) {
             QueryWrapper<User> queryWrapper = new QueryWrapper<>();
             queryWrapper.eq("email", mail);
             long count = userMapper.selectCount(queryWrapper);
@@ -147,10 +151,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (Objects.equals(confirmKey, "")) {
             //生成验证码
             //原来是0-8999，+1000后变成1000-9999
-            int ran = (int)(Math.random()*9000)+1000;
+            int ran = (int) (Math.random() * 9000) + 1000;
             String checkCode = String.valueOf(ran);
 
-            sendMail(mail,"您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + checkCode + "。验证码有效期为1分钟，请勿泄露。","【伙伴匹配系统】账号安全中心");
+            sendMail(mail, "您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + checkCode + "。验证码有效期为1分钟，请勿泄露。", "【伙伴匹配系统】账号安全中心");
 //            System.out.println("邮箱已发送！");
             try {
                 // 指定缓存1分钟过期时间
@@ -159,8 +163,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
                 log.error("redis set key error", e);
             }
             return checkCode;
-        }else{
-            sendMail(mail,"您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + confirmKey + "，请勿泄露。","【伙伴匹配系统】账号安全中心");
+        } else {
+            sendMail(mail, "您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + confirmKey + "，请勿泄露。", "【伙伴匹配系统】账号安全中心");
             return confirmKey;
         }
     }
@@ -301,57 +305,70 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         queryWrapper.isNotNull("tags");
         List<User> userList = this.list(queryWrapper);
         String tags = loginUser.getTags();
-//        Gson gson = new Gson();
-        /*创建一个Gson对象，用于处理Json相关的操作。
-        创建一个TypeToken对象，用于指定List对象的泛型类型是String。
-        调用Gson对象的fromJson方法，传入两个参数，一个是Json字符串tags，一个是TypeToken对象的getType方法返回的Type对象。
-        将fromJson方法返回的List对象赋值给tagList变量。
-        简单来说，就是把tags中的Json数组转换成一个String类型的List。*/
-//        List<String> tagList = gson.fromJson(tags, new TypeToken<List<String>>() {
-//        }.getType());
+        Gson gson = new Gson();
+        /*简单来说，就是把tags中的Json数组转换成一个String类型的List。*/
+        List<String> tagList = gson.fromJson(tags, new TypeToken<List<String>>() {
+        }.getType());
         // 用户列表的下标 => 相似度
         List<Pair<User, Long>> list = new ArrayList<>();
+
+        StringMetric metric = StringMetrics.cosineSimilarity();
         // 依次计算所有用户和当前用户的相似度
-        for (int i = 0; i < userList.size(); i++) {
-            User user = userList.get(i);
+//        for (int i = 0; i < userList.size(); i++) {
+        for (User user : userList) {
             String userTags = user.getTags();
             // 无标签或者为当前用户自己
             if (StringUtils.isBlank(userTags) || user.getId() == loginUser.getId()) {
+                // 跳过
                 continue;
             }
-//            List<String> userTagList = gson.fromJson(userTags, new TypeToken<List<String>>() {
-//            }.getType());
+            List<String> userTagList = gson.fromJson(userTags, new TypeToken<List<String>>() {
+            }.getType());
 
             // 计算分数
 //            long distance = AlgorithmUtils.minDistance(tagList, userTagList);
-            long distance = AlgorithmUtils.minDistance(tags, userTags);
+//            long distance = AlgorithmUtils.minDistance(tags, userTags);
+            long distance = (long) (compareUseActLd(tagList, userTagList) * 100);
             list.add(new Pair<>(user, distance));
         }
-        // 按编辑距离由小到大排序
+        // 按编辑距离由小到大排序( 改为由大到小了，将list集合中的Pair对象按照Long值从小到大排序，并取出前num个Pair对象，存放到topUserPairList集合中 )
         List<Pair<User, Long>> topUserPairList = list.stream()
-                .sorted((a, b) -> (int) (a.getValue() - b.getValue()))
+                .sorted((b, a) -> (int) (a.getValue() - b.getValue()))
                 .limit(num)
                 .collect(Collectors.toList());
-        // 原本顺序的 userId 列表
-        List<Long> userIdList = topUserPairList.stream().map(pair -> pair.getKey().getId()).collect(Collectors.toList());
+
+        // 原本顺序的 userId 列表 ( 这段代码的作用是将topUserPairList集合中的Pair对象映射为User对象的id属性，并收集到userIdList集合中 )
+        List<Long> userIdList = topUserPairList.stream()
+                .map(pair -> pair.getKey().getId())
+                .collect(Collectors.toList());
+
         QueryWrapper<User> userQueryWrapper = new QueryWrapper<>();
         userQueryWrapper.in("id", userIdList);
+
         // 1, 3, 2
         // User1、User2、User3
         // 1 => User1, 2 => User2, 3 => User3
-        Map<Long, List<User>> userIdUserListMap = this.list(userQueryWrapper)
-                .stream()
-                .map(user -> getSafetyUser(user))
+        /* 将根据userQueryWrapper条件查询得到的User对象集合进行处理和分组，并按照User对象的id属性作为键，
+        User对象列表作为值，存放到userIdUserListMap映射中 */
+        Map<Long, List<User>> userIdUserListMap = this.list(userQueryWrapper).stream()
+                .map(this::getSafetyUser)
                 .collect(Collectors.groupingBy(User::getId));
+
+        // 将userIdUserListMap中每个userId对应的第一个用户添加到finalUserList中。
         List<User> finalUserList = new ArrayList<>();
         for (Long userId : userIdList) {
             finalUserList.add(userIdUserListMap.get(userId).get(0));
         }
+
+//        List<User> finalUserList = this.list(userQueryWrapper).stream()
+//                .map(this::getSafetyUser)
+//                .collect(Collectors.toList());
+//        Collections.shuffle(finalUserList);
         return finalUserList;
     }
 
     @Override
-    public long getTotalItems(){
+    public long getTotalItems() {
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         return userMapper.selectCount(queryWrapper);
     }
