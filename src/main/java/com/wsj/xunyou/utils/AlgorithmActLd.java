@@ -5,14 +5,14 @@ import org.apache.commons.text.similarity.LevenshteinDistance;
 import java.util.List;
 
 public class AlgorithmActLd {
-    public static double compareUseActLd(String s1, String s2) {
+    public static long compareUseActLd(String s1, String s2) {
         // 创建一个LevenshteinDistance对象
         EditDistance<Integer> editDistance = new LevenshteinDistance();
         // 计算两个字符串之间的编辑距离
-        return (double)editDistance.apply(s1, s2);
+        return (long)editDistance.apply(s1, s2);
     }
 
-    public static double compareUseActLd(List<String> list1, List<String> list2) {
+    public static long compareUseActLd(List<String> list1, List<String> list2) {
         // 创建一个LevenshteinDistance对象
         EditDistance<Integer> editDistance = new LevenshteinDistance();
         // 定义一个变量，用于存放总的编辑距离分数
@@ -21,14 +21,15 @@ public class AlgorithmActLd {
         for (String s1 : list1) {
             for (String s2 : list2) {
                 // 计算两个字符串之间的编辑距离
-                int distance = editDistance.apply(s1, s2);
+                long distance = editDistance.apply(s1, s2);
                 // 累加到总的编辑距离分数
                 totalDistance += distance;
             }
         }
         // 计算两个list的平均编辑距离分数
-        double averageDistance = totalDistance / (list1.size() * list2.size());
+//        double averageDistance = totalDistance / (list1.size() * list2.size());
         // 计算两个list的相似度分数，这里使用1 - distance / max_length的公式
-        return 1 - averageDistance / Math.max(list1.get(0).length(), list2.get(0).length());
+//        double result = 1 - averageDistance / Math.max(list1.get(0).length(), list2.get(0).length());
+        return (long)totalDistance;
     }
 }

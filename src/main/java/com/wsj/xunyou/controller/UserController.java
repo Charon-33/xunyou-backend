@@ -260,7 +260,7 @@ public class UserController {
         // 2.校验权限（鉴权）
         User loginUser = userService.getLoginUser(request);
         // 3.触发更新
-        int result = userService.updateUser(user, loginUser);
+        int result = userService.updateUser(user, loginUser, request);
         return ResultUtils.success(result);
     }
     @RequestMapping("/resetPwtCheckCode")

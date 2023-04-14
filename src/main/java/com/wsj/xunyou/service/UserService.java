@@ -65,7 +65,7 @@ public interface UserService extends IService<User> {
      * @param user
      * @return
      */
-    int updateUser(User user, User loginUser);
+    int updateUser(User user, User loginUser, HttpServletRequest request);
 
     /**
      * 获取当前登录用户信息

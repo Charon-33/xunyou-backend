@@ -237,7 +237,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     }
 
     @Override
-    public int updateUser(User user, User loginUser) {
+    public int updateUser(User user, User loginUser, HttpServletRequest request) {
         // 仅管理员和自己可修改
         long userId = user.getId();
         if (userId <= 0) {
@@ -246,15 +246,19 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         // todo 补充校验，如果用户没有传任何要更新的值，就直接报错，不用执行 update 语句
         // 如果是管理员，允许更新任意用户
         // 如果不是管理员，只允许更新当前（自己的）信息
-        if (!isAdmin(loginUser) && userId != loginUser.getId()) {
-            throw new BusinessException(ErrorCode.NO_AUTH);
-        }
+//        if (!isAdmin(loginUser) && userId != loginUser.getId()) {
+//            throw new BusinessException(ErrorCode.NO_AUTH);
+//        }
         // 找到当前用户的旧信息
         User oldUser = userMapper.selectById(userId);
         if (oldUser == null) {
             throw new BusinessException(ErrorCode.NULL_ERROR);
         }
-        return userMapper.updateById(user);
+        int isSuccess = userMapper.updateById(user);
+        if(isSuccess > 0){
+            request.getSession().setAttribute(USER_LOGIN_STATE, user);
+        }
+        return isSuccess;
     }
 
     @Override
@@ -305,6 +309,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         queryWrapper.isNotNull("tags");
         List<User> userList = this.list(queryWrapper);
         String tags = loginUser.getTags();
+
+        System.out.println("我的标签：" + tags);
+
         Gson gson = new Gson();
         /*简单来说，就是把tags中的Json数组转换成一个String类型的List。*/
         List<String> tagList = gson.fromJson(tags, new TypeToken<List<String>>() {
@@ -312,7 +319,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         // 用户列表的下标 => 相似度
         List<Pair<User, Long>> list = new ArrayList<>();
 
-        StringMetric metric = StringMetrics.cosineSimilarity();
         // 依次计算所有用户和当前用户的相似度
 //        for (int i = 0; i < userList.size(); i++) {
         for (User user : userList) {
@@ -328,16 +334,29 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             // 计算分数
 //            long distance = AlgorithmUtils.minDistance(tagList, userTagList);
 //            long distance = AlgorithmUtils.minDistance(tags, userTags);
-            long distance = (long) (compareUseActLd(tagList, userTagList) * 100);
+            long distance = compareUseActLd(tagList, userTagList);
             list.add(new Pair<>(user, distance));
         }
-        // 按编辑距离由小到大排序( 改为由大到小了，将list集合中的Pair对象按照Long值从小到大排序，并取出前num个Pair对象，存放到topUserPairList集合中 )
+        // 按编辑距离由小到大排序( 将list集合中的Pair对象按照Long值从小到大排序，并取出前num个Pair对象，存放到topUserPairList集合中 )
         List<Pair<User, Long>> topUserPairList = list.stream()
-                .sorted((b, a) -> (int) (a.getValue() - b.getValue()))
+                .sorted((a, b) -> (int) (a.getValue() - b.getValue()))
                 .limit(num)
                 .collect(Collectors.toList());
+//        旧的遍历方法
+//        for(int i = 0; i < topUserPairList.size(); i++){
+//            System.out.println("用户id：" + topUserPairList.get(i).getKey().getId() +
+//                    "，用户tags："+ topUserPairList.get(i).getKey().getTags() +
+//                    "，相似度："+ topUserPairList.get(i).getValue()
+//            );
+//        }
+        for (Pair<User, Long> userLongPair : topUserPairList) {
+            System.out.println("用户id：" + userLongPair.getKey().getId() +
+                    "，用户tags：" + userLongPair.getKey().getTags() +
+                    "，编辑距离：" + userLongPair.getValue()
+            );
+        }
 
-        // 原本顺序的 userId 列表 ( 这段代码的作用是将topUserPairList集合中的Pair对象映射为User对象的id属性，并收集到userIdList集合中 )
+        // topUserPairList顺序中的 userId 列表 ( 这段代码的作用是将topUserPairList集合中的Pair对象映射为User对象的id属性，并收集到userIdList集合中 )
         List<Long> userIdList = topUserPairList.stream()
                 .map(pair -> pair.getKey().getId())
                 .collect(Collectors.toList());
@@ -348,21 +367,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         // 1, 3, 2
         // User1、User2、User3
         // 1 => User1, 2 => User2, 3 => User3
-        /* 将根据userQueryWrapper条件查询得到的User对象集合进行处理和分组，并按照User对象的id属性作为键，
+        /* 从数据库查出数据后，顺序发生了改变，变成了按id从小到大排序
+        将根据userQueryWrapper条件查询得到的User对象集合进行处理和分组，并按照User对象的id属性作为键，
         User对象列表作为值，存放到userIdUserListMap映射中 */
         Map<Long, List<User>> userIdUserListMap = this.list(userQueryWrapper).stream()
                 .map(this::getSafetyUser)
                 .collect(Collectors.groupingBy(User::getId));
 
-        // 将userIdUserListMap中每个userId对应的第一个用户添加到finalUserList中。
+
         List<User> finalUserList = new ArrayList<>();
+        // 按照userIdList中userId的顺序
         for (Long userId : userIdList) {
+            // 将userIdUserListMap中每个userId对应的（第一个）用户添加到finalUserList中。
             finalUserList.add(userIdUserListMap.get(userId).get(0));
         }
 
-//        List<User> finalUserList = this.list(userQueryWrapper).stream()
-//                .map(this::getSafetyUser)
-//                .collect(Collectors.toList());
+        System.out.println(finalUserList);
 //        Collections.shuffle(finalUserList);
         return finalUserList;
     }
