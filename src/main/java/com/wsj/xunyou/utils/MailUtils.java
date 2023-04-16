@@ -8,7 +8,7 @@ import java.util.Properties;
 /**
  * 发邮件工具类
  */
-public final class MailUtils {
+public class MailUtils {
     private static final String USER = "sunxiaopeng878903@163.com"; // 发件人称号，同邮箱地址※
     private static final String PASSWORD = "XXMEGSMVBCTBFEKA"; // 授权码，开启SMTP时显示※
 

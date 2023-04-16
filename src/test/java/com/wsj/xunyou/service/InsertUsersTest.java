@@ -30,7 +30,6 @@ public class InsertUsersTest {
         for (int i = 0; i < INSERT_NUM; i++) {
             User user = new User();
             user.setUsername("假用户");
-            user.setUserAccount("fakeuser");
             user.setAvatarUrl("https://s2.loli.net/2023/03/05/KJsdhVAZbUXPeT5.jpg");
             user.setGender(0);
             user.setUserPassword("12345678");
@@ -64,7 +63,6 @@ public class InsertUsersTest {
                 j++;
                 User user = new User();
                 user.setUsername("假鱼皮");
-                user.setUserAccount("fakeyupi");
                 user.setAvatarUrl("https://636f-codenav-8grj8px727565176-1256524210.tcb.qcloud.la/img/logo.png");
                 user.setGender(0);
                 user.setUserPassword("12345678");
