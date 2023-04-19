@@ -9,7 +9,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @MapperScan("com.wsj.xunyou.mapper")
 @EnableScheduling
 public class MyApplication {
-
     public static void main(String[] args) {
         SpringApplication.run(MyApplication.class, args);
     }

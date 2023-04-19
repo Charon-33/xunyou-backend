@@ -231,7 +231,6 @@ public class TeamController {
 
     @GetMapping("/list/usersInTeam")
     public BaseResponse<List<User>> listUsersInTeam(@RequestParam int teamId) {
-
         // 在表user_team中查出这个队伍的用户
         QueryWrapper<UserTeam> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("teamId",teamId);

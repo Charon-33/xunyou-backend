@@ -255,8 +255,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             throw new BusinessException(ErrorCode.NULL_ERROR);
         }
         int isSuccess = userMapper.updateById(user);
+        User newUser = userMapper.selectById(userId);
         if(isSuccess > 0){
-            request.getSession().setAttribute(USER_LOGIN_STATE, user);
+            request.getSession().setAttribute(USER_LOGIN_STATE, newUser);
         }
         return isSuccess;
     }
