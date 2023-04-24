@@ -14,8 +14,6 @@ import springfox.documentation.swagger2.annotations.EnableSwagger2WebMvc;
 
 /**
  * 自定义 Swagger 接口文档的配置
- *
- * @author yupi
  */
 @Configuration
 @EnableSwagger2WebMvc
@@ -35,14 +33,13 @@ public class SwaggerConfig {
 
     /**
      * api 信息
-     * @return
      */
     private ApiInfo apiInfo() {
         return new ApiInfoBuilder()
                 .title("伙伴匹配系统")
                 .description("伙伴匹配系统接口文档")
-                .termsOfServiceUrl("https://github.com/liyupi")
-                .contact(new Contact("yupi","https://github.com/liyupi","xxx@qq.com"))
+                .termsOfServiceUrl("https://github.com/Charon-33")
+                .contact(new Contact("wsj","https://github.com/Charon-33","1935496654@qq.com"))
                 .version("1.0")
                 .build();
     }

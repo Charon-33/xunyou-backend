@@ -6,8 +6,6 @@ import java.io.Serializable;
 
 /**
  * 通用分页请求参数
- *
- * @author yupi
  */
 @Data
 public class PageRequest implements Serializable {

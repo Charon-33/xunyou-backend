@@ -1,5 +1,6 @@
 package com.wsj.xunyou.service.impl;
 
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.google.gson.Gson;
@@ -8,28 +9,20 @@ import com.wsj.xunyou.common.ErrorCode;
 import com.wsj.xunyou.mapper.UserMapper;
 import com.wsj.xunyou.model.domain.User;
 import com.wsj.xunyou.service.UserService;
-import com.wsj.xunyou.utils.AlgorithmUtils;
 import com.wsj.xunyou.constant.UserConstant;
 import com.wsj.xunyou.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
-import me.xdrop.fuzzywuzzy.FuzzySearch;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.math3.util.Pair;
-import org.simmetrics.StringMetric;
-import org.simmetrics.metrics.StringMetrics;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.wsj.xunyou.constant.UserConstant.USER_LOGIN_STATE;
@@ -38,8 +31,6 @@ import static com.wsj.xunyou.utils.MailUtils.sendMail;
 
 /**
  * 用户服务实现类
- *
- * @author yupi
  */
 @Service
 @Slf4j
@@ -53,7 +44,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     /**
      * 盐值，混淆密码
      */
-    private static final String SALT = "wsj";
+//    private static final String SALT = "wsj";
 
     @Override
     public Long userRegister(String userName, String email, String userPassword, String checkPassword) {
@@ -107,6 +98,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (userPassword.length() < 8) {
             return null;
         }
+
         // 账户不能包含特殊字符
 //        String validPattern = "[`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
 //        Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
@@ -115,10 +107,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 //        }
         // 2. 加密
 //        String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
+
         // 查询用户是否存在
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("email", userEmail);
-//        queryWrapper.eq("userPassword", encryptPassword);
         queryWrapper.eq("userPassword", userPassword);
         User user = userMapper.selectOne(queryWrapper);
         // 用户不存在
@@ -147,33 +139,36 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             }
         }
         ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
-        // 如果在缓存中没有找到验证码，重新生成验证码
-        if (Objects.equals(confirmKey, "")) {
-            //生成验证码
-            //原来是0-8999，+1000后变成1000-9999
-            int ran = (int) (Math.random() * 9000) + 1000;
-            String checkCode = String.valueOf(ran);
+        //生成验证码
+        //原来是0-8999，+1000后变成1000-9999
+        int ran = (int) (Math.random() * 9000) + 1000;
+        String checkCode = String.valueOf(ran);
 
-            sendMail(mail, "您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + checkCode + "。验证码有效期为1分钟，请勿泄露。", "【伙伴匹配系统】账号安全中心");
+        sendMail(mail, "您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + checkCode + "。验证码有效期为1分钟，请勿泄露。", "【伙伴匹配系统】账号安全中心");
 //            System.out.println("邮箱已发送！");
-            try {
-                // 指定缓存1分钟过期时间
-                valueOperations.set(redisKey, checkCode, 60000, TimeUnit.MILLISECONDS);
-            } catch (Exception e) {
-                log.error("redis set key error", e);
-            }
-            return checkCode;
-        } else {
-            sendMail(mail, "您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + confirmKey + "，请勿泄露。", "【伙伴匹配系统】账号安全中心");
-            return confirmKey;
+        try {
+            // 指定缓存1分钟过期时间
+            valueOperations.set(redisKey, checkCode, 60000, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            log.error("redis set key error", e);
         }
+        return checkCode;
+    }
+
+    @Override
+    public int noLoginResetPwd(String email, String userPassword) {
+        // 找到邮箱为email的用户
+        QueryWrapper<User> userQueryWrapper = new QueryWrapper<>();
+        userQueryWrapper.eq("email", email);
+        User user = userMapper.selectOne(userQueryWrapper);
+        // 重新设置密码
+        user.setUserPassword(userPassword);
+        // 返回更新结果
+        return userMapper.updateById(user);
     }
 
     /**
      * 用户脱敏
-     *
-     * @param originUser
-     * @return
      */
     @Override
     public User getSafetyUser(User originUser) {
@@ -196,8 +191,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
     /**
      * 用户注销
-     *
-     * @param request
      */
     @Override
     public int userLogout(HttpServletRequest request) {
@@ -208,9 +201,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
     /**
      * 根据标签搜索用户（内存过滤）
-     *
      * @param tagNameList 用户要拥有的标签
-     * @return
      */
     @Override
     public List<User> searchUsersByTags(List<String> tagNameList) {
@@ -256,7 +247,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         }
         int isSuccess = userMapper.updateById(user);
         User newUser = userMapper.selectById(userId);
-        if(isSuccess > 0){
+        if (isSuccess > 0) {
             request.getSession().setAttribute(USER_LOGIN_STATE, newUser);
         }
         return isSuccess;
@@ -269,7 +260,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         }
         // 获取当前登录的用户信息
         Object userObj = request.getSession().getAttribute(USER_LOGIN_STATE);
-
         //（鉴权）若获取失败，可能是未登录或没有权限，抛异常
         if (userObj == null) {
             throw new BusinessException(ErrorCode.NO_AUTH);
@@ -279,29 +269,23 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
     /**
      * 是否为管理员
-     *
-     * @param request
-     * @return
      */
-    @Override
-    public boolean isAdmin(HttpServletRequest request) {
-        // 仅管理员可查询
-        // 取出角色类型并判断是否为管理员
-        Object userObj = request.getSession().getAttribute(USER_LOGIN_STATE);
-        User user = (User) userObj;
-        return user != null && user.getUserRole() == UserConstant.ADMIN_ROLE;
-    }
+//    @Override
+//    public boolean isAdmin(HttpServletRequest request) {
+//        // 仅管理员可查询
+//        // 取出角色类型并判断是否为管理员
+//        Object userObj = request.getSession().getAttribute(USER_LOGIN_STATE);
+//        User user = (User) userObj;
+//        return user != null && user.getUserRole() == UserConstant.ADMIN_ROLE;
+//    }
 
     /**
      * 是否为管理员
-     *
-     * @param loginUser
-     * @return
      */
-    @Override
-    public boolean isAdmin(User loginUser) {
-        return loginUser != null && loginUser.getUserRole() == UserConstant.ADMIN_ROLE;
-    }
+//    @Override
+//    public boolean isAdmin(User loginUser) {
+//        return loginUser != null && loginUser.getUserRole() == UserConstant.ADMIN_ROLE;
+//    }
 
     @Override
     public List<User> matchUsers(long num, User loginUser) {
@@ -396,24 +380,21 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
     /**
      * 根据标签搜索用户（SQL 查询版）
-     *
-     * @param tagNameList 用户要拥有的标签
-     * @return
      */
-    @Deprecated
-    private List<User> searchUsersByTagsBySQL(List<String> tagNameList) {
-        if (CollectionUtils.isEmpty(tagNameList)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
-        }
-        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        // 拼接 and 查询
-        // like '%Java%' and like '%Python%'
-        for (String tagName : tagNameList) {
-            queryWrapper = queryWrapper.like("tags", tagName);
-        }
-        List<User> userList = userMapper.selectList(queryWrapper);
-        return userList.stream().map(this::getSafetyUser).collect(Collectors.toList());
-    }
+//    @Deprecated
+//    private List<User> searchUsersByTagsBySQL(List<String> tagNameList) {
+//        if (CollectionUtils.isEmpty(tagNameList)) {
+//            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+//        }
+//        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+//        // 拼接 and 查询
+//        // like '%Java%' and like '%Python%'
+//        for (String tagName : tagNameList) {
+//            queryWrapper = queryWrapper.like("tags", tagName);
+//        }
+//        List<User> userList = userMapper.selectList(queryWrapper);
+//        return userList.stream().map(this::getSafetyUser).collect(Collectors.toList());
+//    }
 
 }
 

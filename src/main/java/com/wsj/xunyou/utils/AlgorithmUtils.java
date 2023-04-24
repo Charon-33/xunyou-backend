@@ -5,8 +5,6 @@ import java.util.Objects;
 
 /**
  * 算法工具类
- *
- * @author yupi
  */
 public class AlgorithmUtils {
 

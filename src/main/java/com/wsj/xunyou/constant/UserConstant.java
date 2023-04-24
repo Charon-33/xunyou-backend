@@ -2,8 +2,6 @@ package com.wsj.xunyou.constant;
 
 /**
  * 用户常量
- *
- * @author yupi
  */
 public interface UserConstant {
 

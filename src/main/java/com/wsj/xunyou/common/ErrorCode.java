@@ -2,8 +2,6 @@ package com.wsj.xunyou.common;
 
 /**
  * 错误码
- *
- * @author yupi
  */
 public enum ErrorCode {
 

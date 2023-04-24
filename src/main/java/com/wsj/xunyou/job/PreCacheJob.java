@@ -19,8 +19,6 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * 缓存预热任务
- *
- * @author yupi
  */
 @Component
 @Slf4j

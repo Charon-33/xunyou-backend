@@ -2,8 +2,6 @@ package com.wsj.xunyou.common;
 
 /**
  * 返回工具类
- *
- * @author yupi
  */
 public class ResultUtils {
 

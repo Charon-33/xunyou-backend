@@ -6,8 +6,6 @@ import java.io.Serializable;
 
 /**
  * 用户退出队伍请求体
- *
- * @author yupi
  */
 @Data
 public class TeamQuitRequest implements Serializable {

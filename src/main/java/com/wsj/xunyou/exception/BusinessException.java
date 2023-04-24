@@ -4,8 +4,6 @@ import com.wsj.xunyou.common.ErrorCode;
 
 /**
  * 自定义异常类
- *
- * @author yupi
  */
 public class BusinessException extends RuntimeException {
 

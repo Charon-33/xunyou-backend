@@ -126,46 +126,43 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
     @Override
     public List<TeamUserVO> listTeams(TeamQuery teamQuery, boolean isAdmin) {
         QueryWrapper<Team> queryWrapper = new QueryWrapper<>();
-        // 组合查询条件
+        // 组合查询条件，查询队伍的信息
         if (teamQuery != null) {
             Long id = teamQuery.getId();
             // 根据id查询
             if (id != null && id > 0) {
                 queryWrapper.eq("id", id);
             }
-
+            // 根据id列表来查询
             List<Long> idList = teamQuery.getIdList();
             if (CollectionUtils.isNotEmpty(idList)) {
                 queryWrapper.in("id", idList);
             }
-
+            // 根据队伍名称或描述来查询
             String searchText = teamQuery.getSearchText();
             if (StringUtils.isNotBlank(searchText)) {
                 queryWrapper.and(qw -> qw.like("name", searchText).or().like("description", searchText));
             }
-
+            // 根据队伍名称来查询
             String name = teamQuery.getName();
             if (StringUtils.isNotBlank(name)) {
                 queryWrapper.like("name", name);
             }
-
+            // 根据队伍描述来查询
             String description = teamQuery.getDescription();
             if (StringUtils.isNotBlank(description)) {
                 queryWrapper.like("description", description);
             }
-
+            // 根据队伍的最大人数来查询
             Integer maxNum = teamQuery.getMaxNum();
-            // 查询最大人数相等的
             if (maxNum != null && maxNum > 0) {
                 queryWrapper.eq("maxNum", maxNum);
             }
-
-            Long userId = teamQuery.getUserId();
             // 根据创建人来查询
+            Long userId = teamQuery.getUserId();
             if (userId != null && userId > 0) {
                 queryWrapper.eq("userId", userId);
             }
-
             // 根据状态来查询
             Integer status = teamQuery.getStatus();
             if(status != null) {
@@ -173,37 +170,44 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
                 if (statusEnum == null) {
                     statusEnum = TeamStatusEnum.PUBLIC;
                 }
-
     //            if (!isAdmin && statusEnum.equals(TeamStatusEnum.PRIVATE)) {
     //                throw new BusinessException(ErrorCode.NO_AUTH);
     //            }
-
                 queryWrapper.eq("status", statusEnum.getValue());
             }
         }
         // 不展示已过期的队伍
         // expireTime is null or expireTime > now()
         queryWrapper.and(qw -> qw.gt("expireTime", new Date()).or().isNull("expireTime"));
+        // 开始查询并将结果放入 teamList
         List<Team> teamList = this.list(queryWrapper);
+        // 如果查询的结果为空
         if (CollectionUtils.isEmpty(teamList)) {
             return new ArrayList<>();
         }
+        // 创建存 TeamUserVO 的 list，用作最后返回的信息
         List<TeamUserVO> teamUserVOList = new ArrayList<>();
-        // 关联查询创建人的用户信息
+        // 关联查询创建人的用户信息，将创建人的用户信息存入 TeamUserVO 的 createUser
         for (Team team : teamList) {
+            // 从 teamList 中取出每一个 team 的 userid ，这个id是创建者的
             Long userId = team.getUserId();
+            // 取到的id为空时，跳过
             if (userId == null) {
                 continue;
             }
+            // 根据id查出创建者的信息
             User user = userService.getById(userId);
+            // 创建 teamUserVO 对象，并将team中需要的信息复制到该对象
             TeamUserVO teamUserVO = new TeamUserVO();
             BeanUtils.copyProperties(team, teamUserVO);
             // 脱敏用户信息
             if (user != null) {
                 UserVO userVO = new UserVO();
                 BeanUtils.copyProperties(user, userVO);
+                // 将创建者的信息复制到 teamUserVO
                 teamUserVO.setCreateUser(userVO);
             }
+            // 存入 list 中
             teamUserVOList.add(teamUserVO);
         }
         return teamUserVOList;
@@ -211,27 +215,33 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
 
     @Override
     public boolean updateTeam(TeamUpdateRequest teamUpdateRequest, User loginUser) {
+        // 数据为空时抛出异常
         if (teamUpdateRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
+        // 判断队伍的id是否合法
         Long id = teamUpdateRequest.getId();
         if (id == null || id <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
+        // 获取该队伍的旧信息
         Team oldTeam = this.getById(id);
         if (oldTeam == null) {
             throw new BusinessException(ErrorCode.NULL_ERROR, "队伍不存在");
         }
-        // 只有管理员或者队伍的创建者可以修改
-        if (oldTeam.getUserId() != loginUser.getId() && !userService.isAdmin(loginUser)) {
+        // 判断是否有权限更改，只有管理员或者队伍的创建者可以修改
+//        if (oldTeam.getUserId() != loginUser.getId() && !userService.isAdmin(loginUser)) {
+        if (oldTeam.getUserId() != loginUser.getId()) {
             throw new BusinessException(ErrorCode.NO_AUTH);
         }
+        // 校验加密的房间是否设置了密码
         TeamStatusEnum statusEnum = TeamStatusEnum.getEnumByValue(teamUpdateRequest.getStatus());
         if (statusEnum.equals(TeamStatusEnum.SECRET)) {
             if (StringUtils.isBlank(teamUpdateRequest.getPassword())) {
                 throw new BusinessException(ErrorCode.PARAMS_ERROR, "加密房间必须要设置密码");
             }
         }
+        //执行更新操作
         Team updateTeam = new Team();
         BeanUtils.copyProperties(teamUpdateRequest, updateTeam);
         return this.updateById(updateTeam);
@@ -239,35 +249,41 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
 
     @Override
     public boolean joinTeam(TeamJoinRequest teamJoinRequest, User loginUser) {
+        // 数据为空时，抛出异常
         if (teamJoinRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
+        // 提取队伍id
         Long teamId = teamJoinRequest.getTeamId();
+        // 获取队伍的全部信息
         Team team = getTeamById(teamId);
+        // 判断该队伍是否已过期
         Date expireTime = team.getExpireTime();
         if (expireTime != null && expireTime.before(new Date())) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "队伍已过期");
         }
+        // 查看队伍的类型
         Integer status = team.getStatus();
         TeamStatusEnum teamStatusEnum = TeamStatusEnum.getEnumByValue(status);
-        if (TeamStatusEnum.PRIVATE.equals(teamStatusEnum)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "禁止加入私有队伍");
-        }
+//        if (TeamStatusEnum.PRIVATE.equals(teamStatusEnum)) {
+//            throw new BusinessException(ErrorCode.PARAMS_ERROR, "禁止加入私有队伍");
+//        }
         String password = teamJoinRequest.getPassword();
         if (TeamStatusEnum.SECRET.equals(teamStatusEnum)) {
             if (StringUtils.isBlank(password) || !password.equals(team.getPassword())) {
                 throw new BusinessException(ErrorCode.PARAMS_ERROR, "密码错误");
             }
         }
-        // 该用户已加入的队伍数量
+
         long userId = loginUser.getId();
         // 只有一个线程能获取到锁
-        RLock lock = redissonClient.getLock("yupao:join_team");
+        RLock lock = redissonClient.getLock("xunyou:join_team");
         try {
             // 抢到锁并执行
             while (true) {
                 if (lock.tryLock(0, -1, TimeUnit.MILLISECONDS)) {
                     System.out.println("getLock: " + Thread.currentThread().getId());
+                    // 该用户已加入的队伍数量不能超过5个
                     QueryWrapper<UserTeam> userTeamQueryWrapper = new QueryWrapper<>();
                     userTeamQueryWrapper.eq("userId", userId);
                     long hasJoinNum = userTeamService.count(userTeamQueryWrapper);
@@ -310,12 +326,15 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean quitTeam(TeamQuitRequest teamQuitRequest, User loginUser) {
+        // 数据为空时，抛出异常
         if (teamQuitRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
+
         Long teamId = teamQuitRequest.getTeamId();
         Team team = getTeamById(teamId);
         long userId = loginUser.getId();
+
         UserTeam queryUserTeam = new UserTeam();
         queryUserTeam.setTeamId(teamId);
         queryUserTeam.setUserId(userId);
@@ -381,9 +400,6 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
 
     /**
      * 根据 id 获取队伍信息
-     *
-     * @param teamId
-     * @return
      */
     private Team getTeamById(Long teamId) {
         if (teamId == null || teamId <= 0) {

@@ -6,8 +6,6 @@ import java.io.Serializable;
 
 /**
  * 用户登录请求体
- *
- * @author yupi
  */
 @Data
 public class UserLoginRequest implements Serializable {
@@ -17,6 +15,4 @@ public class UserLoginRequest implements Serializable {
     private String userEmail;
 
     private String userPassword;
-
-    private String checkCode;
 }
