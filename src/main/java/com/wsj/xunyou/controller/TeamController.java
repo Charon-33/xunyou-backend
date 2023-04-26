@@ -19,6 +19,7 @@ import com.wsj.xunyou.service.TeamService;
 import com.wsj.xunyou.service.UserService;
 import com.wsj.xunyou.service.UserTeamService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -103,7 +104,7 @@ public class TeamController {
         }
         // 判断用户是否为管理员
 //        boolean isAdmin = userService.isAdmin(request);
-        boolean isAdmin = false;
+        boolean isAdmin = true;
         // 根据条件查出的队伍信息存入 teamList 中
         List<TeamUserVO> teamList = teamService.listTeams(teamQuery, isAdmin);
         // 1、查询队伍列表
@@ -129,17 +130,17 @@ public class TeamController {
         } catch (Exception ignored){}
         // 3、查询已加入队伍的人数
         // 根据队伍的id列表，查出数据并存到 userTeamList
-        QueryWrapper<UserTeam> userTeamJoinQueryWrapper = new QueryWrapper<>();
-        userTeamJoinQueryWrapper.in("teamId", teamIdList);
-        List<UserTeam> userTeamList = userTeamService.list(userTeamJoinQueryWrapper);
+//        QueryWrapper<UserTeam> userTeamJoinQueryWrapper = new QueryWrapper<>();
+//        userTeamJoinQueryWrapper.in("teamId", teamIdList);
+//        List<UserTeam> userTeamList = userTeamService.list(userTeamJoinQueryWrapper);
 
         // 队伍 id => 加入这个队伍的用户列表
         /*将userTeamList这个列表转换成一个流，然后根据UserTeam对象的teamId属性进行分组，
         将每个teamId对应的UserTeam对象列表收集到一个Map中，
         其中teamId作为键，UserTeam对象列表作为值。
         这样就可以方便地根据teamId查找对应的UserTeam对象列表了。*/
-        Map<Long, List<UserTeam>> teamIdUserTeamList = userTeamList.stream()
-                .collect(Collectors.groupingBy(UserTeam::getTeamId));
+//        Map<Long, List<UserTeam>> teamIdUserTeamList = userTeamList.stream()
+//                .collect(Collectors.groupingBy(UserTeam::getTeamId));
 
         // 知道每个team在 UserTeam 中出现了多少次，就有多少人在队伍里
         /*使用了List的forEach方法和Map的getOrDefault方法。这个方法可以对列表中的每个元素执行一个操作，
@@ -147,8 +148,9 @@ public class TeamController {
         这个属性的值是从teamIdUserTeamList这个Map中根据team的id属性获取对应的UserTeam对象列表的大小，
         如果Map中没有这个键，就返回一个空的列表，并取其大小，即0。
         这样就可以统计每个team有多少个UserTeam对象了。*/
-        teamList.forEach(team -> team.setHasJoinNum(teamIdUserTeamList.getOrDefault(team.getId(), new ArrayList<>())
-                .size()));
+//        teamList.forEach(team -> team.setHasJoinNum(teamIdUserTeamList.getOrDefault(team.getId(), new ArrayList<>())
+//                .size()));
+
         // 根据队伍公开或加密来返回队伍数据
         return ResultUtils.success(teamList);
     }
@@ -232,6 +234,10 @@ public class TeamController {
         QueryWrapper<UserTeam> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("userId", loginUser.getId());
         List<UserTeam> userTeamList = userTeamService.list(queryWrapper);
+        // 如果该用户没有加入队伍，则直接返回空的数据
+        if (CollectionUtils.isEmpty(userTeamList)) {
+            return ResultUtils.success(new ArrayList<>());
+        }
         // （去重）取出不重复的队伍 id
         // teamId userId
         // 1, 2

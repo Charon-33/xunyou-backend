@@ -54,7 +54,7 @@ public class UserController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         // 校验验证码
-        codeCheck( userRegisterRequest.getEmail() ,userRegisterRequest.getCheckCode());
+        codeCheck( userRegisterRequest.getCheckCode(),userRegisterRequest.getEmail());
         // 获取数据
         String userName = userRegisterRequest.getUserName();
         String email = userRegisterRequest.getEmail();

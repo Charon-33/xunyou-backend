@@ -27,11 +27,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  *
@@ -210,6 +208,21 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
             // 存入 list 中
             teamUserVOList.add(teamUserVO);
         }
+
+        // 查询队伍的人数
+        /* 简单来说，就是把teamList中每个元素的id提取出来，放到一个新的List中。*/
+        final List<Long> teamIdList = teamUserVOList.stream().map(TeamUserVO::getId).collect(Collectors.toList());
+        // 根据条件查询数据库
+        QueryWrapper<UserTeam> userTeamJoinQueryWrapper = new QueryWrapper<>();
+        userTeamJoinQueryWrapper.in("teamId", teamIdList);
+        List<UserTeam> userTeamList = userTeamService.list(userTeamJoinQueryWrapper);
+        // teamId作为键，UserTeam对象列表作为值。
+        Map<Long, List<UserTeam>> teamIdUserTeamList = userTeamList.stream()
+                .collect(Collectors.groupingBy(UserTeam::getTeamId));
+
+        teamUserVOList.forEach(team -> team.setHasJoinNum(teamIdUserTeamList.getOrDefault(team.getId(), new ArrayList<>())
+                .size()));
+
         return teamUserVOList;
     }
 
