@@ -19,6 +19,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
+
 import javax.annotation.Resource;
 import javax.imageio.ImageIO;
 import javax.servlet.ServletOutputStream;
@@ -48,13 +49,13 @@ public class UserController {
     private RedisTemplate<String, Object> redisTemplate;
 
     @PostMapping("/register")
-    public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest, HttpServletResponse response ,HttpServletRequest request) throws IOException {
+    public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest, HttpServletResponse response, HttpServletRequest request) throws IOException {
         // 判断参数是否为空
         if (userRegisterRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         // 校验验证码
-        codeCheck( userRegisterRequest.getCheckCode(),userRegisterRequest.getEmail());
+        codeCheck(userRegisterRequest.getCheckCode(), userRegisterRequest.getEmail());
         // 获取数据
         String userName = userRegisterRequest.getUserName();
         String email = userRegisterRequest.getEmail();
@@ -135,27 +136,28 @@ public class UserController {
     @GetMapping("/code/send")
     public void sentCode(@RequestParam String mail, @RequestParam int opt) {
         // 在缓存中找验证码
-        String redisKey = "xunyou:user"+ mail +":confirmKey:";
+        String redisKey = "xunyou:user" + mail + ":confirmKey:";
         ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
         String confirmKey = (String) valueOperations.get(redisKey);
         // 如果在缓存中找不到，将它设置为空字符串
-        if(confirmKey == null){
+        if (confirmKey == null) {
             confirmKey = "";
             // 生成验证码并在缓存中设置验证码
             userService.getCheckCode(mail, redisKey, confirmKey, opt);
-        }else{ //如果在缓存中找到了，就再发一遍验证码
+        } else { //如果在缓存中找到了，就再发一遍验证码
             sendMail(mail, "您好，欢迎使用wsj的伙伴匹配系统，您本次的验证码为：" + confirmKey + "，请勿泄露。", "【伙伴匹配系统】账号安全中心");
         }
     }
+
     //    @GetMapping("/resetPwtCheckCode")
     @GetMapping("/code/check")
     public boolean codeCheck(@RequestParam String codeCheck, @RequestParam String email) {
-        String redisKey = "xunyou:user"+ email +":confirmKey:";
+        String redisKey = "xunyou:user" + email + ":confirmKey:";
         ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
         String confirmKey = (String) valueOperations.get(redisKey);
         if (!codeCheck.equals(confirmKey)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "验证码错误或已过期");
-        }else{
+        } else {
             return true;
         }
     }
@@ -185,11 +187,28 @@ public class UserController {
 
     @GetMapping("/search/username")
     public BaseResponse<List<User>> searchUsersByUsername(@RequestParam(required = false) String username) {
-        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        if (StringUtils.isNotBlank(username)) {
-            queryWrapper.like("username", username);
+
+        // 使用redis
+        String redisKey = String.format("xunyou:user:searchbyname:%s", username);
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        // 如果有缓存，直接读缓存
+        List<User> userList = (List<User>) valueOperations.get(redisKey);
+        if (userList != null) {
+            List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
+            return ResultUtils.success(list);
         }
-        List<User> userList = userService.list(queryWrapper);
+        // 无缓存，查数据库
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        queryWrapper.like("username", username);
+        userList = userService.list(queryWrapper);
+        // 写缓存
+        try {
+            // 指定缓存30秒过期时间
+            valueOperations.set(redisKey, userList, 30000, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            log.error("redis set key error", e);
+        }
+
         List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
         return ResultUtils.success(list);
     }
@@ -207,11 +226,31 @@ public class UserController {
 
     @GetMapping("/search/tags")
     public BaseResponse<List<User>> searchUsersByTags(@RequestParam(required = false) List<String> tagNameList) {
-        if (CollectionUtils.isEmpty(tagNameList)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+//        if (CollectionUtils.isEmpty(tagNameList)) {
+//            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+//        }
+
+        // 使用redis
+        String redisKey = String.format("xunyou:user:searchbytags:%s", tagNameList);
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        // 如果有缓存，直接读缓存
+        List<User> userList = (List<User>) valueOperations.get(redisKey);
+        if (userList != null) {
+            List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
+            return ResultUtils.success(list);
         }
-        List<User> userList = userService.searchUsersByTags(tagNameList);
-        return ResultUtils.success(userList);
+        // 无缓存，查数据库
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        userList = userService.searchUsersByTags(tagNameList);
+        // 写缓存
+        try {
+            // 指定缓存30秒过期时间
+            valueOperations.set(redisKey, userList, 30000, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            log.error("redis set key error", e);
+        }
+        List<User> list = userList.stream().map(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
+        return ResultUtils.success(list);
     }
 
     // todo 推荐多个，未实现
@@ -239,7 +278,7 @@ public class UserController {
 //    }
 
     @PostMapping("/update")
-    public BaseResponse<Integer> updateUser(@RequestBody User user, @RequestParam int opt,HttpServletRequest request) {
+    public BaseResponse<Integer> updateUser(@RequestBody User user, @RequestParam int opt, HttpServletRequest request) {
         // BaseResponse<Integer> 泛型要用包装类，不能用int
         // 1.校验参数是否为空
         if (user == null) {
@@ -247,7 +286,7 @@ public class UserController {
         }
 
         // 用户在没有登录的时候重置密码
-        if(opt == 1){
+        if (opt == 1) {
             int result = userService.noLoginResetPwd(user.getEmail(), user.getUserPassword());
             return ResultUtils.success(result);
         }
