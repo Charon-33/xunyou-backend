@@ -263,6 +263,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         //（鉴权）若获取失败，可能是未登录或没有权限，抛异常
         if (userObj == null) {
             throw new BusinessException(ErrorCode.NO_AUTH);
+//            return null;
         }
         return (User) userObj;
     }

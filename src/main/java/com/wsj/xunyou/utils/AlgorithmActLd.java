@@ -4,6 +4,7 @@ import org.apache.commons.text.similarity.LevenshteinDistance;
 
 import java.util.List;
 
+// 编辑距离算法
 public class AlgorithmActLd {
     public static long compareUseActLd(String s1, String s2) {
         // 创建一个LevenshteinDistance对象
